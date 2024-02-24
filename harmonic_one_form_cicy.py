@@ -187,19 +187,15 @@ def get_CY_metrics(args):
         point_c = tf.stack([point_c, dummy], axis=0)
         g = tf.math.real(mlg.complex_math.complex_hessian(tf.math.real(CY_model(point_c))[0], point_c)[0])
         restriction = get_restriction(point, const_coord, ignored_coord) # (5, 3)
-        g = tf.einsum('ij, jk, kl', tf.math.conj(tf.transpose(restriction)), g, restriction)
+        g = tf.einsum('ij, jk, kl', tf.transpose(restriction), g, tf.math.conj(restriction))
         #s, u, v = tf.linalg.svd(tf.reshape(g, [3,3]))
         #g_inv = tf.matmul(v, tf.matmul(tf.linalg.pinv(tf.linalg.diag(s)), u, adjoint_b=True))
         g_inv = tf.linalg.inv(g)
         sqrt_det_g = tf.sqrt(tf.linalg.det(g))
     d_g_inv = tape.jacobian(g_inv, point)
     d_sqrt_det_g = tape.jacobian(sqrt_det_g, point)
-    d_g_inv = delete_columns(d_g_inv, const_coord, ignored_coord, axis=2)
-    d_sqrt_det_g = delete_columns(d_sqrt_det_g, const_coord, ignored_coord, axis=0)
-   # d_g_inv = tf.concat([d_g_inv[:, :, :const_coord], d_g_inv[:, :, const_coord+1:]], axis=2)
-   # d_g_inv = tf.concat([d_g_inv[:, :, :ignored_affine_coord], d_g_inv[:, :, ignored_affine_coord+1:]], axis=2)
-   # d_sqrt_det_g = tf.concat([d_sqrt_det_g[:const_coord], d_sqrt_det_g[const_coord+1:]], axis=0)
-   # d_sqrt_det_g = tf.concat([d_sqrt_det_g[:ignored_affine_coord], d_sqrt_det_g[ignored_affine_coord+1:]], axis=0)
+    d_g_inv = tf.einsum('ijk, kl', d_g_inv, restriction)
+    d_sqrt_det_g = tf.einsum('k, kl', d_sqrt_det_g, restriction)
     return g, g_inv, d_g_inv, sqrt_det_g, d_sqrt_det_g
 
 #def get_one_from(args):
@@ -233,13 +229,7 @@ def loss_func(args):
     #                sqrt_det_g *(tf.einsum('im, ij, jkl -> klm', d_Omega, g_inv, eps) + 
     #                             tf.einsum('i, ijm ,jkl -> klm', omega, d_g_inv, eps))) / 2 #(3, 3, 5)
 
-    # delete the extra columns
-    d_Omega = delete_columns(d_Omega, const_coord, ignored_coord, axis=1)
-    #d_Omega = tf.concat([d_Omega[:, :const_coord], d_Omega[:, const_coord+1:]], axis=1)
-    #d_Omega = tf.concat([d_Omega[:, :ignored_affine_coord], d_Omega[:, ignored_affine_coord+1:]], axis=1) # (3,3)
-
-    #d_star_Omega = tf.concat([d_star_Omega[:, :, :const_coord], d_star_Omega[:, :, const_coord+1:ignored_coord],
-    #                          d_star_Omega[:, :, ignored_coord+1:]], axis=2) # (3, 3, 3)
+    d_Omega = tf.einsum('ik, kl', d_Omega, restriction) # (3, 5) -> (3, 3)
 
     d_omega = d_Omega - tf.transpose(d_Omega)
     # The 1/2 factor comes from overcounting the upper / lower triangular
@@ -330,6 +320,12 @@ train_set_batched = train_set.batch(batch_size)
 g_factor = 0.2
 
 optimizer = tf.keras.optimizers.Adam()
+
+checkpoint_directory = model_save_path + '_checkpoints'
+checkpoint_prefix = os.path.join(checkpoint_directory, "ckpt")
+checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
+status = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_directory))
+
 epoch = 0
 while epoch < max_epochs:
     epoch = epoch + 1
@@ -375,7 +371,8 @@ while epoch < max_epochs:
             print('test avg_norm: ', avg_norm)
             print('test max_norm: ', tf.math.reduce_max(norm))
             print('test min_norm: ', tf.math.reduce_min(norm))
-        model.save(model_save_path + '_tmp/epoch_{}'.format(epoch))
+        #model.save(model_save_path + '_tmp/epoch_{}'.format(epoch))
+        checkpoint.save(file_prefix=checkpoint_prefix)
 
 model.save(model_save_path)
 
