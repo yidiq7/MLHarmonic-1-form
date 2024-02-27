@@ -246,8 +246,8 @@ def loss_func(args):
 
     d_star_omega_square = 1 / sqrt_det_g * d_star_Omega**2
     loss = d_omega_square + d_star_omega_square
-    omega_norm = tf.einsum('i, ij, j',omega, g_inv, omega) * sqrt_det_g
-    return loss,  omega_norm, d_omega_square, d_star_omega_square
+    omega_norm_square = tf.einsum('i, ij, j',omega, g_inv, omega) * sqrt_det_g
+    return loss,  omega_norm_square, d_omega_square, d_star_omega_square
 
 def generate_dataset(HS):
     dataset = None
@@ -341,11 +341,11 @@ while epoch < max_epochs:
     #for step, entries in enumerate(train_set_batched):
         st = time.time()
         with tf.GradientTape() as tape:
-            loss, norm, d_omega_square, d_star_omega_square = tf.vectorized_map(loss_func, (points, g_factor*gs, 1/g_factor*g_invs, 1/g_factor*d_g_invs, g_factor**(3/2)*sqrt_det_gs, g_factor**(3/2)*d_sqrt_det_gs, const_coords, ignored_coords))
+            loss, norm_square, d_omega_square, d_star_omega_square = tf.vectorized_map(loss_func, (points, g_factor*gs, 1/g_factor*g_invs, 1/g_factor*d_g_invs, g_factor**(3/2)*sqrt_det_gs, g_factor**(3/2)*d_sqrt_det_gs, const_coords, ignored_coords))
             loss = tf.reduce_mean(loss)
             # It's actually the avg_norm squared
-            avg_norm = tf.reduce_mean(norm)
-            loss = loss / avg_norm
+            avg_norm_square = tf.reduce_mean(norm_square)
+            loss = loss / avg_norm_square
             grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
@@ -356,21 +356,21 @@ while epoch < max_epochs:
         print('loss: ', loss)
         print('d_omega_square: ', tf.reduce_mean(d_omega_square))
         print('d_star_omega_square: ', tf.reduce_mean(d_star_omega_square))
-        print('avg_norm: ', avg_norm)
-        print('max_norm: ', tf.math.reduce_max(norm))
-        print('min_norm: ', tf.math.reduce_min(norm))
+        print('avg_norm_square: ', avg_norm_square)
+        print('max_norm_square: ', tf.math.reduce_max(norm_square))
+        print('min_norm_square: ', tf.math.reduce_min(norm_square))
 
         for step, (points, gs, g_invs, d_g_invs, sqrt_det_gs, d_sqrt_det_gs, const_coords, ignored_coords) in enumerate(test_set):
-            loss, norm, d_omega_square, d_star_omega_square = tf.vectorized_map(loss_func, (points, g_factor*gs, 1/g_factor*g_invs, 1/g_factor*d_g_invs, g_factor**(3/2)*sqrt_det_gs, g_factor**(3/2)*d_sqrt_det_gs, const_coords, ignored_coords))
+            loss, norm_square, d_omega_square, d_star_omega_square = tf.vectorized_map(loss_func, (points, g_factor*gs, 1/g_factor*g_invs, 1/g_factor*d_g_invs, g_factor**(3/2)*sqrt_det_gs, g_factor**(3/2)*d_sqrt_det_gs, const_coords, ignored_coords))
             loss = tf.reduce_mean(loss)
-            avg_norm = tf.reduce_mean(norm)
-            loss = loss / avg_norm
+            avg_norm_square = tf.reduce_mean(norm_square)
+            loss = loss / avg_norm_square
             print('test loss: ', loss)
             print('test d_omega_square: ', tf.reduce_mean(d_omega_square))
             print('test d_star_omega_square: ', tf.reduce_mean(d_star_omega_square))
-            print('test avg_norm: ', avg_norm)
-            print('test max_norm: ', tf.math.reduce_max(norm))
-            print('test min_norm: ', tf.math.reduce_min(norm))
+            print('test avg_norm_square: ', avg_norm_square)
+            print('test max_norm_square: ', tf.math.reduce_max(norm_square))
+            print('test min_norm_square: ', tf.math.reduce_min(norm_square))
         #model.save(model_save_path + '_tmp/epoch_{}'.format(epoch))
         checkpoint.save(file_prefix=checkpoint_prefix)
 
