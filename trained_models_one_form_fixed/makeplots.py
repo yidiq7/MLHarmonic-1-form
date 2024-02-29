@@ -2,6 +2,7 @@ import re
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 sns.set_theme()
 
 # Read the text file
@@ -15,40 +16,54 @@ for manifold in manifold_list:
     elif manifold == 'cicy1' or manifold == 'cicy2':
         layer = '128_256_1024_15'
 
-    plot_folder = 'plots/' + manifold + '_' + layer
-    os.makedirs(plot_folder, exist_ok=True)
+    plot_folder = 'plots/{}_{}/'.format(manifold, layer)
+    csvfile = 'csv/{}_{}.csv'.format(manifold, layer)
+    df = pd.read_csv(csvfile, sep=' ')
+    metrics = ['loss', 'average norm', 'max norm', 'min norm', 'normalized max norm', 'normalized min norm']
 
-    model = manifold + '/' + layer
-    filename = model + '_history.txt'
-    with open(filename, 'r') as file:
-        content = file.read()
+    window_size = 10
+    for metric in metrics:
+        df['Smoothed Train {}'.format(metric)] = df['Train {}'.format(metric)].rolling(window=window_size).mean()
+        #df['Smoothed Train {} std'.format(metric)] = df['Train {}'.format(metric)].rolling(window=window_size).std()
+        df['Smoothed Test {}'.format(metric)] = df['Test {}'.format(metric)].rolling(window=window_size).mean()
+        #df['Smoothed Test {} std'.format(metric)] = df['Test {}'.format(metric)].rolling(window=window_size).std()
 
-    train_metrics = ['loss', 'avg_norm', 'max_norm', 'min_norm']
-    test_metrics = ['test loss', 'test avg_norm', 'test max_norm', 'test min_norm']
-
-    def extract_values(keyword):
-        # Ignored keyword proceded by 'test ', so that when searching for train metrics,
-        # the test metrics will be ingorned.
-        values = re.findall(rf'(?<!test ){keyword}:\s+tf\.Tensor\(([\d\.e-]+)', content)
-        return [float(value) for value in values]
-
-    for (train_metric, test_metric) in zip(train_metrics, test_metrics):
+    for metric in metrics:
         # Function to extract values from content based on the given keyword
 
-        train_values = extract_values(train_metric)
-        test_values= extract_values(test_metric)
-        epochs = [(i + 1) * 10 for i in range(len(train_values))]
+        #$plt.plot(epochs, train_values, linestyle='-', linewidth=1, label="Training")
+        #plt.plot(epochs, test_values, linestyle='-', linewidth=1, label="Testing")
+        sns.lineplot(data=df, x='Epoch', y='Smoothed Train {}'.format(metric), label='Train')
+        sns.lineplot(data=df, x='Epoch', y='Smoothed Test {}'.format(metric), label='Test')
+        #plt.fill_between(df['Epoch'],
+        #                 df['Smoothed Train {}'.format(metric)] + df['Smoothed Train {} std'.format(metric)], 
+        #                 df['Smoothed Train {}'.format(metric)] - df['Smoothed Train {} std'.format(metric)], 
+        #                 alpha=0.2)
 
-        plt.plot(epochs, train_values, linestyle='-', linewidth=1, label="Training")
-        plt.plot(epochs, test_values, linestyle='-', linewidth=1, label="Testing")
+        #plt.fill_between(df['Epoch'],
+        #                 df['Smoothed Test {}'.format(metric)] + df['Smoothed Test {} std'.format(metric)], 
+        #                 df['Smoothed Test {}'.format(metric)] - df['Smoothed Test {} std'.format(metric)], 
+        #                 alpha=0.2)
+
         plt.yscale('log')
         plt.xlabel('Epoch')
-        plt.ylabel(f'{train_metric.capitalize()} (Log Scale)')
-        plt.title(f'{train_metric.capitalize()} vs Epoch')
+        plt.ylabel(f'{metric.capitalize()} (Log Scale)')
+        plt.title(f'{metric.capitalize()} vs Epoch')
         plt.legend()
-        plt.grid(True)
+        #plt.grid(True)
 
-        plot_filename = os.path.join(plot_folder, f'{train_metric}_log_plot.pdf')
-        plt.savefig(plot_filename, format='pdf', bbox_inches='tight') 
+        plot_filename = os.path.join(plot_folder, '{}_log_plot.pdf'.format(metric.replace(' ', '_')))
+        plt.savefig(plot_filename, format='pdf', bbox_inches='tight')
         # Clear the plot for the next metric
         plt.clf()
+
+
+csvfile = 'csv/summary.csv'
+df = pd.read_csv(csvfile, sep=' ')
+sns.scatterplot(data=df, x='Harmonic loss', y='Normalized min norm', hue='Manifold')
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel('Harmonic loss')
+plt.ylabel('Normalized min norm')
+plt.legend()
+plt.savefig('plots/summary.pdf', format='pdf', bbox_inches='tight')
