@@ -198,12 +198,11 @@ def get_CY_metrics(args):
     d_sqrt_det_g = tf.einsum('k, kl', d_sqrt_det_g, restriction)
     return g, g_inv, d_g_inv, sqrt_det_g, d_sqrt_det_g
 
-#def get_one_from(args):
 
 def loss_func(args):
     point, g, g_inv, d_g_inv, sqrt_det_g, d_sqrt_det_g, const_coord, ignored_coord = args
     # ∂(P_L*ω^k )/∂x^i 
-    with tf.GradientTape(persistent=True) as tape:
+    with tf.GradientTape() as tape:
         tape.watch(point)
         restriction = get_restriction(point, const_coord, ignored_coord) # (5, 3)
         basis = get_basis(point) # (5, 5, 5)
