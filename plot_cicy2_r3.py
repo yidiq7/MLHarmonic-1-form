@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--manifold', default='cicy2')
 parser.add_argument('--layers', default='128_256_1024_15')
+parser.add_argument('--coord_set')
 #parser.add_argument('--load_path')
 parser.add_argument('--save_path')
 args = parser.parse_args()
@@ -25,10 +26,12 @@ tf.random.set_seed(1024)
 cicy = args.manifold
 layer = args.layers
 #load_path = args.load_path
+coord_set = args.coord_set
 model_save_path = args.save_path
 
-coord_set = 'z345'
+#coord_set = 'z345'
 #coord_set = 'z235'
+#coord_set = 'z123'
 
 if coord_set == 'z345':
     # R3 (really should be R3) is the surface without the zero coordinates, used
@@ -57,25 +60,30 @@ if coord_set == 'z345':
 
     f1 = -z0**4 + z3**4 + 1/10*z4**4 + 1/10*z5**4
     f2 = -z0**2 + z4**2 + z5**2 + 1/100*z3**2
+    f = [f1, f2]
+
 elif coord_set == 'z235':
     #C2
     Z_C = [z0, z2, z3, z5]
 
     f1 = -z0**4 + z2**4 + z3**4 + 1/10*z5**4
     f2 = -z0**2 + z5**2 + 1/100*z2**2 + 1/100*z3**2
+    f = [f1, f2]
+
 elif coord_set == 'z123':
     # This gives no solutions
     Z_C = [z0, z1, z2, z3]
 
-    f1 = -z0**4 + z1**4 + z2**4 + z3**4  + 1/10
-    f2 = -z0**2 + 1 + 1/100*z1**2 + 1/100*z2**2 + 1/100*z3**2
+    f = -z0**4 + z1**4 + z2**4 + z3**4 + 1/10*0.99**4
 
-f = [f1, f2]
 
 try:
     points_C = np.load(points_set_path)
 except:
-    HS_C = mlg.cicyhypersurface.RealCICYHypersurface(Z_C, f, 10000)
+    if coord_set == 'z123': 
+        HS_C = mlg.hypersurface.RealHypersurface(Z_C, f, 10000)
+    else:
+        HS_C = mlg.cicyhypersurface.RealCICYHypersurface(Z_C, f, 10000)
     HS_C.list_patches()
     points_C = np.array(HS_C.patches[0].points)
     np.save(points_set_path, points_C)
@@ -93,7 +101,7 @@ elif cicy == 'cicy2':
 
 def df_tf(z):
     if cicy == 'cicy1':
-        df_tf = [-4*z[0]**3, -4*z[0]**3, 4*z[1]**3, 4*z[2]**3, 4*z[3]**3, z[4]**3, 0]
+        df_tf = [-4*z[0]**3, 4*z[1]**3, 4*z[2]**3, 4*z[3]**3, z[4]**3, 0]
     elif cicy == 'cicy2':
         df_tf = [-4*z[0]**3, 4*z[1]**3, 4*z[2]**3, 4*z[3]**3, 0.4*z[4]**3, 0.4*z[5]**3]
     return df_tf
@@ -106,15 +114,18 @@ def dg_tf(z):
     return dg_tf
 
 def df_arr(z):
-    df_arr = np.column_stack((-4*z[:,0]**3, 4*z[:,1]**3, 4*z[:,2]**3, 4*z[:,3]**3, 0.4*z[:,4]**3, 0.4*z[:,5]**3))
+    df_arr = np.column_stack((4*z[:,1]**3, 4*z[:,2]**3, 4*z[:,3]**3, 0.4*z[:,4]**3, 0.4*z[:,5]**3))
     return df_arr
 
 def dg_arr(z):
-    dg_arr = np.column_stack((-2*z[:,0], 0.02*z[:,1], 0.02*z[:,2], 0.02*z[:,3], 2*z[:,4], 2*z[:,5]))
+    dg_arr = np.column_stack((0.02*z[:,1], 0.02*z[:,2], 0.02*z[:,3], 2*z[:,4], 2*z[:,5]))
     return dg_arr
 
-def project_to_surface(w, v1, v2):
+def project_to_surface_cicy(w, v1, v2):
     return w - np.sum(w*v1, axis=1)[:, np.newaxis] * v1 - np.sum(w*v2, axis=1)[:, np.newaxis] * v2
+
+def project_to_surface(w, v1):
+    return w - np.sum(w*v1, axis=1)[:, np.newaxis] * v1
 
 def get_basis(point):
     n = tf.shape(point)[0]
@@ -283,8 +294,8 @@ except:
         z1z4 = np.column_stack((zero_column, zero_column))
         points_C_R6 = np.insert(points_C, [1, 3], z1z4, axis=1)
     elif coord_set == 'z123':
-        one_column = np.ones(points_C.shape[0])
-        z4z5 = np.column_stack((zero_column, one_column))
+        z5_column = 0.99*np.ones(points_C.shape[0])
+        z4z5 = np.column_stack((zero_column, z5_column))
         points_C_R6 = np.insert(points_C, [4, 4], z4z5, axis=1)
 
     HS_C_R6 = mlg.cicyhypersurface.RealCICYHypersurface(Z, f, n_pairs=10000, points=points_C_R6, auto_patch=True)
@@ -349,20 +360,31 @@ for step, (points, gs, g_invs, d_g_invs, sqrt_det_gs, d_sqrt_det_gs, const_coord
     vec_2 = vec_2 / np.linalg.norm(vec_2, axis=1)[:, np.newaxis]
 
     print("Before projecting to the surface: ", omega_renorm_r)
-    omega_renorm_r = project_to_surface(omega_renorm_r, vec_1, vec_2)
+    if coord_set == 'z123':
+        omega_renorm_p = project_to_surface(omega_renorm_r[:,1:], grad_f)
+    else: 
+        omega_renorm_p = project_to_surface_cicy(omega_renorm_r[:,1:], vec_1, vec_2)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
+    random_indices = np.random.choice(points_C.shape[0], size=2000, replace=False)
+    points_C = points_C[random_indices]
     print(points_C)
     print(points)
-    print(omega_renorm_r)
+    print(omega_renorm_p)
     ax.scatter(points_C[:,1], points_C[:,2], points_C[:,3], marker='.', s=1.0)
     # C1
     if coord_set == 'z345':
-        ax.quiver(points_r[:,3], points_r[:,4], points_r[:,5], omega_renorm_r[:,3], omega_renorm_r[:,4], omega_renorm_r[:,5], length=0.5, color='orange')
-        ax.set_title('1-form on CICY2 with z1 = 0, z2 = 0')
-        plt.savefig('Curve_C.pdf')
+        ax.quiver(points_r[:,3], points_r[:,4], points_r[:,5], omega_renorm_p[:,2], omega_renorm_p[:,3], omega_renorm_p[:,4], length=0.5, color='orange')
+        ax.set_title('1-form on CICY2 with z1 = 0, z2 = 0 (Scaled by 0.5)')
+        plt.savefig('Curve_cicy2_C.pdf')
+        print('Period: ', np.mean(np.sqrt(omega_renorm_p[:,3]**2 + omega_renorm_p[:,4]**2)))
     elif coord_set == 'z235':
     # C2
-        ax.quiver(points_r[:,2], points_r[:,3], points_r[:,5], omega_renorm_r[:,2], omega_renorm_r[:,3], omega_renorm_r[:,5], length=1000, color='orange')
-        ax.set_title('1-form on CICY2 with z1 = 0, z4 = 0')
-        plt.savefig('Curve_C2.pdf')
+        ax.quiver(points_r[:,2], points_r[:,3], points_r[:,5], omega_renorm_p[:,1], omega_renorm_p[:,2], omega_renorm_p[:,4], length=1000, color='orange')
+        ax.set_title('1-form on CICY2 with z1 = 0, z4 = 0 (Scaled by 1000)')
+        plt.savefig('Curve_cicy2_C2.pdf')
+    elif coord_set == 'z123':
+        ax.quiver(points_r[:,1], points_r[:,2], points_r[:,3], omega_renorm_p[:,0], omega_renorm_p[:,1], omega_renorm_p[:,2], length=1000, color='orange')
+        ax.set_title('1-form on CICY2 (approximately) with z4 = 0, z5 = 0.99, (Scaled by 1000)')
+        plt.savefig('Curve_cicy2_C3.pdf')
+    

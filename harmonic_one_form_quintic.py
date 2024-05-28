@@ -36,7 +36,7 @@ train_set_path = 'dataset/dg_' + quintic + '_100000_train'
 test_set_path = 'dataset/dg_' + quintic + '_10000_train'
 
 if model_save_path is None:
-    model_save_path = 'trained_models_one_form/' + quintic + '/' + layer
+    model_save_path = 'trained_models_one_form_fixed/' + quintic + '/' + layer
 
 Z = sp.var('z0:5')
 

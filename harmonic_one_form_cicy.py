@@ -34,7 +34,7 @@ train_set_path = 'dataset/dg_' + cicy + '_100000_train'
 test_set_path = 'dataset/dg_' + cicy + '_10000_train'
 
 if model_save_path is None:
-    model_save_path = 'trained_models_one_form/' + cicy + '/' + layer
+    model_save_path = 'trained_models_one_form_fixed/' + cicy + '/' + layer
 
 CY_model = tf.keras.models.load_model('trained_models/' + cicy + '/64_256_1024_1', compile=False)
 
@@ -204,10 +204,10 @@ def loss_func(args):
     # ∂(P_L*ω^k )/∂x^i 
     with tf.GradientTape() as tape:
         tape.watch(point)
-        restriction = get_restriction(point, const_coord, ignored_coord) # (5, 3)
-        basis = get_basis(point) # (5, 5, 5)
+        restriction = get_restriction(point, const_coord, ignored_coord) # (6, 3)
+        basis = get_basis(point) # (6, 6, 6)
         omega_comp = model(tf.expand_dims(point / tf.norm(point), 0))[0]
-        omega_comp = fill_strict_upper_tri(omega_comp) # (5, 5)
+        omega_comp = fill_strict_upper_tri(omega_comp) # (6, 6)
         # Multiply Omega_{ij} with e^{ijk}. 
         # To make the broadcasting works properly, tranpose k to the first coordinate
         # Then transpose it back after tf.multiply
@@ -215,20 +215,20 @@ def loss_func(args):
         omega  = tf.multiply(omega_comp, basis)
         omega  = tf.transpose(omega, [1, 2, 0])
 
-        omega = tf.reduce_sum(tf.einsum('ijk, kl', omega, restriction), axis=[0, 1]) # (5, 5, 3) -> (3)
+        omega = tf.reduce_sum(tf.einsum('ijk, kl', omega, restriction), axis=[0, 1]) # (6, 6, 3) -> (3)
         # star_omega = sqrt(tf.linalg.det(g)) * tf.einsum('i, ij, jkl', omega, g_inv, eps) / 2 # (3, 3)
 
     # ∂(ω^k)/∂x^i  * dx
     # Note that the derivatives appear as the last index here, 
     # which is why later on d_star_Omega[1,2,0] is the first term in d_star_omega_square 
     # Alternatively one can also transpose the tensors and move it to the first index as in the formulas.
-    d_Omega = tape.jacobian(omega, point) # (3, 5)
+    d_Omega = tape.jacobian(omega, point) # (3, 6)
 
     #d_star_Omega = (tf.einsum('m, i, ij, jkl -> klm', d_sqrt_det_g, omega, g_inv, eps) +
     #                sqrt_det_g *(tf.einsum('im, ij, jkl -> klm', d_Omega, g_inv, eps) + 
-    #                             tf.einsum('i, ijm ,jkl -> klm', omega, d_g_inv, eps))) / 2 #(3, 3, 5)
+    #                             tf.einsum('i, ijm ,jkl -> klm', omega, d_g_inv, eps))) / 2 #(3, 3, 6)
 
-    d_Omega = tf.einsum('ik, kl', d_Omega, restriction) # (3, 5) -> (3, 3)
+    d_Omega = tf.einsum('ik, kl', d_Omega, restriction) # (3, 6) -> (3, 3)
 
     d_omega = d_Omega - tf.transpose(d_Omega)
     # The 1/2 factor comes from overcounting the upper / lower triangular
